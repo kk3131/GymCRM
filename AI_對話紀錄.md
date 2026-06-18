@@ -153,7 +153,36 @@ LINE 整合等推播基礎建設。
 
 ## 階段三：Streamlit 頁面開發
 
-*(開發中，持續補充)*
+### Prompt 7 — auth.py 與 app.py 架構設計
+
+**auth.py 設計重點：**
+
+`PAGE_ACCESS` 字典集中管理所有頁面權限，要調整只改這裡：
+```python
+PAGE_ACCESS = {
+    "會員管理":  {"manager", "front_desk"},
+    "訓練紀錄":  {"manager", "front_desk", "trainer"},
+    "到館簽到":  {"manager", "front_desk"},
+    "RFM 分析":  {"manager"},
+    "流失預警":  {"manager"},
+}
+```
+
+`verify_login` 用 bcrypt 比對密碼雜湊，不還原明碼。  
+`can_access` 做二次把關，防止直接跳頁繞過側邊欄。
+
+**app.py 設計重點：**
+- 用 `st.session_state.user` 保存登入狀態，頁面重跑不會掉
+- `st.form` 包住登入輸入，避免每打一個字就觸發重跑
+- 登出時 `del st.session_state.user` 再 `st.rerun()`
+
+**三個角色的權限驗證結果：**
+
+| 角色 | 能看的頁面 |
+|------|-----------|
+| manager | 全部 5 頁 |
+| front_desk | 會員管理、訓練紀錄、到館簽到 |
+| trainer | 訓練紀錄 |
 
 ---
 
