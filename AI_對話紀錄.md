@@ -99,7 +99,55 @@ LINE 整合等推播基礎建設。
 
 ## 階段二：資料庫建置
 
-*(開發中，持續補充)*
+### Prompt 5 — schema.sql 設計與版本比較
+
+**背景：**  
+我自己寫了一版 schema，AI 寫了一版，兩版比較後取各自優點合併。
+
+**我的版本比 AI 好的設計：**
+- 日期全用 `TEXT` 存 ISO 格式，SQLite 沒有真正的 DATETIME，這樣最一致
+- `is_active` 軟刪除旗標（staff / exercises / membership_plans）——舊的已下架方案還要保留給付款紀錄參考，不能真的刪
+- `member_goals` 的 cross-field CHECK 約束：`lift` 目標必須有 `exercise_id`，`weight` 目標不可有 `exercise_id`，直接在 DB 層強制完整性
+- `consent_date` 記錄個資同意時間（個資合規需要）
+- `staff` 用 `username` 而非 `email` 登入，更有彈性
+- `memberships` 不存 `type`，因為可從 `plan_id → membership_plans.type` 查到，存在這裡才是真正的冗餘
+- `exercises` 加 `exercise_type`（strength / cardio），決定前端要顯示重量欄位還是時間欄位
+
+**AI 版本補充的兩個欄位：**
+- `height_cm` 移到 `members`（不是 `body_measurements`）——成人身高幾乎不變，是會員層級屬性，適合放在 members
+- `duration_seconds` 加到 `training_logs`——有氧動作（跑步機、划船機）沒有重量，需要用秒數記錄
+
+**最終 schema 結構（11 張表）：**
+
+| 表名 | 用途 | 關鍵設計 |
+|------|------|---------|
+| members | 會員基本資料 | goal_type 管方向，height_cm 在此 |
+| staff | 員工帳號 | username 登入，password_hash 存雜湊 |
+| membership_plans | 會籍方案定義 | is_active 軟刪除 |
+| exercises | 動作字典 | exercise_type 區分重訓/有氧 |
+| memberships | 會員持有的合約 | sessions_remaining 堂數剩餘 |
+| payments | 金流紀錄 | RFM 的 M 來源 |
+| check_ins | 到館簽到 | RFM 的 R / F 來源 |
+| body_measurements | 身體測量 | 多筆追蹤變化 |
+| member_goals | 目標里程碑 | cross-field CHECK 確保資料一致 |
+| training_sessions | 一次訓練的表頭 | 連結教練與日期 |
+| training_logs | 訓練明細 | 進步停滯偵測的資料來源 |
+
+---
+
+### Prompt 6 — db.py 設計
+
+**功能：**
+- `get_connection()` 回傳 SQLite 連線
+- 每次連線自動開啟 `PRAGMA foreign_keys = ON`（SQLite 預設不開）
+- `row_factory = sqlite3.Row`，查詢結果可用欄位名稱取值（`row["member_id"]`）
+- 第一次執行自動讀 `schema.sql` 建表（`CREATE TABLE IF NOT EXISTS` 保證冪等）
+
+**驗證結果：**  
+執行 `python seed.py` 成功，資料庫寫入確認：
+- 3 個會員，goal_type 正確
+- check_ins 89 筆（高貢獻會員密集到館）
+- training_logs 18 筆（8 次 session × 平均 2-3 個動作）
 
 ---
 
