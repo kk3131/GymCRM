@@ -186,14 +186,35 @@ PAGE_ACCESS = {
 
 ---
 
+### Prompt 8 — 會員管理頁面（Part 1 列表 + Part 2 新增）
+
+**新增檔案：**
+- `members_page.py`：會員列表、詳細頁、新增會員，資料查詢與畫面渲染分開（fetch_* / render_*）
+- `labels.py`：資料庫代碼 → 中文對照表，供所有頁面共用
+
+**修改檔案：**
+- `auth.py`：補上 `can_see_financials(role)`，前台無法檢視消費紀錄
+- `app.py`：會員管理頁接入 `members_page.render(user)`
+- `schema.sql` / `seed.py`：移除 `members` 表的 `height_cm`（存了但未顯示的孤兒欄位）
+
+**關鍵設計決策：**
+
+1. **會籍狀態「算出來的」**：一個會員可能有多筆會籍，列表用優先序 active > frozen > expired 取代表值；詳細頁列出全部
+2. **列表用 st.columns 而非 st.dataframe**：dataframe 無法在格子裡放按鈕，彩色狀態膠囊也需要 HTML
+3. **頁面切換靠 session_state**：`view_member_id`（詳細頁）和 `member_add_mode`（新增頁）控制顯示哪個畫面
+4. **三表原子交易**：新增會員時 members + memberships + payments 包在同一個 transaction，失敗全部 rollback，不會留半套資料
+5. **財務資料權限**：歷史消費紀錄用 `can_see_financials()` 擋前台，前台看到「無檢視權限」字樣
+
+---
+
 ## 遇到的問題與解法
 
-*(開發中，每次解決 bug 後補充，格式如下)*
-
-```
-### 問題 N — [問題簡述]
-**狀況**：
-**錯誤訊息**：
-**原因**：
-**解法**：
+### 問題 1 — ImportError: cannot import name 'can_see_financials'
+**狀況**：修改 auth.py 新增 `can_see_financials()` 後，重啟 Streamlit 仍報 ImportError，但檔案內容已正確  
+**錯誤訊息**：`ImportError: cannot import name 'can_see_financials' from 'auth' (D:\GymCRM\auth.py)`  
+**原因**：Python 的 `__pycache__` 快取了舊版 bytecode，Streamlit 重啟不會強制重新編譯  
+**解法**：刪除快取資料夾再重啟
+```powershell
+Remove-Item -Path "D:\GymCRM\__pycache__" -Recurse -Force
+streamlit run app.py
 ```
