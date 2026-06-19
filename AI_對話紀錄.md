@@ -244,7 +244,7 @@ PAGE_ACCESS = {
 
 ---
 
-### Prompt 11 — 訓練紀錄頁面（training_page.py）
+### Prompt 11 — 訓練紀錄頁面 Part 1（training_page.py 初版）
 
 **新增檔案：**
 - `training_page.py`：新增訓練紀錄（Part 1），進步曲線待開發（Part 2）
@@ -263,6 +263,28 @@ PAGE_ACCESS = {
 - **購物車模式**：動作清單存在 `session_state["training_cart"]`，用小表單逐筆加入，不需一次填完再送出，符合實際在教練旁邊一組一組記的使用情境
 - **表單與送出按鈕分離**：「加入動作」用 `st.form`，「送出訓練紀錄」是表單外的按鈕，兩個操作互不干擾
 - **兩層原子交易**：`training_sessions` + `training_logs` 包成一筆 transaction，任一動作明細失敗就整批 rollback
+
+### Prompt 12 — 訓練紀錄頁面 Part 2：進步曲線 + 停滯偵測
+
+**修改檔案：**
+- `training_page.py`
+
+**新增檔案：**
+- `requirements.txt`：`streamlit` / `bcrypt` / `plotly`
+
+**新增功能：**
+- `render()` 改用 `st.tabs` 拆成「新增訓練紀錄」和「進步曲線」兩個 tab
+- 「進步曲線」tab：選會員 + 動作，顯示每次訓練最大重量的折線圖（plotly），並在停滯時顯示警告
+
+**新增函式：**
+- `fetch_progress(member_id, exercise_id)`：每次訓練取 `MAX(weight)`，按日期排序，給折線圖使用
+- `detect_stall(progress)`：週間比較式停滯偵測。比較「最近一週最高重量」與「前三週最高重量」，最近 ≤ 之前則判定停滯。用每週取最大而非單筆，避免熱身組或測試組重量誤觸警告
+- `has_checkin_on(member_id, date_str)`：新增訓練時軟性提示，當日無到館紀錄會顯示警告但仍可送出
+
+**設計重點：**
+- **停滯偵測邏輯**：只在兩邊都有資料才判斷，缺一邊回傳 False，不輕易誤報
+- **plotly 延遲 import**：`import plotly.graph_objects as go` 放在 `render_progress()` 內，只有實際進入進步曲線 tab 才載入，避免啟動時多一個 import
+- **停滯 → 流失預警的串聯設計**（為後續 RFM 頁面預留）：進步停滯是「最想放棄的時刻 = 轉換成本最弱的時刻」，未來 RFM 流失預警會把停滯狀態納入計算
 
 ---
 
