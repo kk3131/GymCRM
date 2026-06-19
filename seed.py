@@ -80,14 +80,14 @@ def seed():
 
     # ---------- 會員 ----------
     m_high = insert(cur,
-        "INSERT INTO members(name,gender,birth_date,height_cm,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("王大明", "male", "1990-05-12", 175, "0912345678", "wang@example.com", "gain_muscle", d(300), 1, d(300)))
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("王大明", "male", "1990-05-12", "0912345678", "wang@example.com", "gain_muscle", d(300), 1, d(300)))
     m_mid = insert(cur,
-        "INSERT INTO members(name,gender,birth_date,height_cm,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("李小華", "female", "1995-08-20", 162, "0922333444", "lee@example.com", "lose_weight", d(240), 1, d(240)))
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("李小華", "female", "1995-08-20", "0922333444", "lee@example.com", "lose_weight", d(240), 1, d(240)))
     m_churn = insert(cur,
-        "INSERT INTO members(name,gender,birth_date,height_cm,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("陳志強", "male", "1988-03-03", 170, "0933222111", "chen@example.com", "maintain", d(330), 1, d(330)))
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("陳志強", "male", "1988-03-03", "0933222111", "chen@example.com", "maintain", d(330), 1, d(330)))
 
     # ---------- 會籍 ----------
     # 高：月費(使用中) + 私教包(使用中，剩2堂)

@@ -8,6 +8,7 @@ app.py — 健身房 CRM 主程式
 import streamlit as st
 
 from auth import verify_login, pages_for_role, can_access, ROLE_LABELS
+import members_page
 
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
@@ -62,7 +63,7 @@ def render_page(page: str, user: dict):
     st.title(page)
 
     if page == "會員管理":
-        st.info("會員列表 / 新增會員 —— 第二優先，接下來開發。")
+        members_page.render(user)
     elif page == "訓練紀錄":
         st.info("訓練紀錄 —— 開發中。")
     elif page == "到館簽到":

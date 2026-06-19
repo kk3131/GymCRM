@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS members (
     name                    TEXT    NOT NULL,
     gender                  TEXT    CHECK (gender IN ('male', 'female', 'other')),
     birth_date              TEXT,                                   -- 'YYYY-MM-DD'
-    height_cm               REAL,                                   -- 身高(公分)：成人幾乎不變，屬會員層級屬性，算 BMI 用
     phone                   TEXT,
     email                   TEXT,
     goal_type               TEXT    CHECK (goal_type IN ('lose_weight', 'gain_muscle', 'maintain')),

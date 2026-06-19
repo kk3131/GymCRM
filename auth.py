@@ -47,3 +47,8 @@ def pages_for_role(role: str):
 def can_access(role: str, page: str) -> bool:
     """單獨檢查某角色能否進某頁（防止直接跳頁繞過側邊欄）。"""
     return role in PAGE_ACCESS.get(page, set())
+
+
+def can_see_financials(role: str) -> bool:
+    """能否檢視財務資料（消費紀錄、金額）。前台看不到。"""
+    return role == "manager"
