@@ -218,3 +218,16 @@ PAGE_ACCESS = {
 Remove-Item -Path "D:\GymCRM\__pycache__" -Recurse -Force
 streamlit run app.py
 ```
+
+### 問題 2 — selectbox 傳入 sqlite3.Row 導致 TypeError + Missing Submit Button
+**狀況**：進入新增會員頁面，同時出現兩個錯誤  
+**錯誤訊息**：
+```
+TypeError: cannot pickle 'sqlite3.Row' object
+Missing Submit Button（Streamlit 警告）
+```
+**原因**：`fetch_active_plans()` 回傳 sqlite3.Row list，Streamlit 的 selectbox 渲染時會對選項做 `deepcopy`，但 sqlite3.Row 是 C extension 物件，不支援 pickle。form 在到達 `st.form_submit_button()` 之前就崩潰，才同時觸發兩個錯誤（根本原因只有一個）  
+**解法**：`fetch_active_plans()` 回傳前轉成 dict list，修改後仍需清除 `__pycache__` 才會生效
+```python
+return [dict(r) for r in rows]
+```
