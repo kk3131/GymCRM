@@ -95,6 +95,30 @@ def fetch_checkins(member_id: int, limit: int = 10):
     return rows
 
 
+def fetch_recent_trainings(member_id: int, limit: int = 5):
+    """最近 N 次訓練的所有動作明細（JOIN sessions + logs + exercises）。"""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT ts.training_session_id, ts.training_date,
+               e.name AS exercise_name, l.weight, l.sets, l.reps
+        FROM training_sessions ts
+        JOIN training_logs l ON l.training_session_id = ts.training_session_id
+        JOIN exercises e      ON e.exercise_id = l.exercise_id
+        WHERE ts.training_session_id IN (
+            SELECT training_session_id FROM training_sessions
+            WHERE member_id = ?
+            ORDER BY training_date DESC, training_session_id DESC
+            LIMIT ?
+        )
+        ORDER BY ts.training_date DESC, ts.training_session_id DESC, l.log_id
+        """,
+        (member_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def fetch_active_plans():
     conn = get_connection()
     rows = conn.execute(
@@ -102,7 +126,7 @@ def fetch_active_plans():
         "FROM membership_plans WHERE is_active = 1 ORDER BY plan_id"
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def create_member(name, gender, birth_date, phone, email, goal_type, plan, method, staff_id):
@@ -278,6 +302,35 @@ def render_detail(user: dict, member_id: int):
     else:
         st.caption("尚無簽到紀錄。")
 
+    # --- 最近訓練紀錄 ---
+    st.subheader("最近訓練紀錄")
+    trainings = fetch_recent_trainings(member_id, 5)
+    if not trainings:
+        st.caption("尚無訓練紀錄。")
+        return
+
+    # 依訓練場次分組（rows 已按場次排序）
+    sessions, order = {}, []
+    for r in trainings:
+        sid = r["training_session_id"]
+        if sid not in sessions:
+            sessions[sid] = {"date": r["training_date"], "logs": []}
+            order.append(sid)
+        sessions[sid]["logs"].append(r)
+
+    for sid in order:
+        s = sessions[sid]
+        st.markdown(f"**{s['date']}**")
+        st.dataframe(
+            [{
+                "動作": l["exercise_name"],
+                "重量": f"{l['weight']:g} kg" if l["weight"] is not None else "—",
+                "組數": l["sets"] if l["sets"] is not None else "—",
+                "次數": l["reps"] if l["reps"] is not None else "—",
+            } for l in s["logs"]],
+            hide_index=True, use_container_width=True,
+        )
+
 
 def render_add(user: dict):
     if st.button("← 返回列表"):
@@ -286,10 +339,11 @@ def render_add(user: dict):
 
     st.header("新增會員")
 
-    plans = fetch_active_plans()
+    plans = [dict(p) for p in fetch_active_plans()]   # 轉 dict，避免 sqlite3.Row 無法序列化
     if not plans:
         st.warning("尚無可用的會籍方案，無法新增會員。")
         return
+    plan_by_id = {p["plan_id"]: p for p in plans}
 
     GENDER_OPTS = {"不指定": None, "男": "male", "女": "female", "其他": "other"}
     GOAL_OPTS = {"不指定": None, "減重": "lose_weight", "增肌": "gain_muscle", "維持": "maintain"}
@@ -308,10 +362,15 @@ def render_add(user: dict):
         goal_label = st.selectbox("健身目標", list(GOAL_OPTS.keys()))
 
         st.subheader("會籍方案與付款")
-        plan = st.selectbox(
+        # 選項用 plan_id(純數字、可序列化)；顯示文字交給 format_func 查表
+        plan_id = st.selectbox(
             "選擇方案",
-            plans,
-            format_func=lambda p: f"{p['name']}（{PLAN_TYPE_LABELS.get(p['type'], p['type'])}・{int(p['price'])}元）",
+            list(plan_by_id.keys()),
+            format_func=lambda pid: (
+                f"{plan_by_id[pid]['name']}（"
+                f"{PLAN_TYPE_LABELS.get(plan_by_id[pid]['type'], plan_by_id[pid]['type'])}・"
+                f"{int(plan_by_id[pid]['price'])}元）"
+            ),
         )
         method_label = st.selectbox("付款方式", list(METHOD_OPTS.keys()))
 
@@ -331,6 +390,7 @@ def render_add(user: dict):
         return
 
     # --- 寫入（三表一致）---
+    plan = plan_by_id[plan_id]   # 由選到的 plan_id 取回完整方案
     try:
         create_member(
             name=name.strip(),
