@@ -102,7 +102,7 @@ def fetch_active_plans():
         "FROM membership_plans WHERE is_active = 1 ORDER BY plan_id"
     ).fetchall()
     conn.close()
-    return rows
+    return [dict(r) for r in rows]
 
 
 def create_member(name, gender, birth_date, phone, email, goal_type, plan, method, staff_id):
