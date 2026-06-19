@@ -10,6 +10,7 @@ import streamlit as st
 from auth import verify_login, pages_for_role, can_access, ROLE_LABELS
 import members_page
 import checkin_page
+import training_page
 
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
@@ -66,7 +67,7 @@ def render_page(page: str, user: dict):
     if page == "會員管理":
         members_page.render(user)
     elif page == "訓練紀錄":
-        st.info("訓練紀錄 —— 開發中。")
+        training_page.render(user)
     elif page == "到館簽到":
         checkin_page.render(user)
     elif page == "RFM 分析":

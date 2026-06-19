@@ -209,6 +209,7 @@ PAGE_ACCESS = {
 
 ### Prompt 9 — 到館簽到頁面（checkin_page.py）
 
+
 **新增檔案：**
 - `checkin_page.py`：搜尋會員 → 登記到館 → 今日到館清單
 
@@ -225,6 +226,26 @@ PAGE_ACCESS = {
 **設計重點：**
 - **時區處理**：優先用 `zoneinfo.ZoneInfo("Asia/Taipei")` 取台北時間，避免伺服器在 UTC 環境記錯時間；若系統缺 tzdata 則 fallback 到本地時間
 - **sqlite3.Row 問題**：所有 `fetchall()` 結果一律 `[dict(r) for r in rows]`，沿用問題 2 的教訓
+
+### Prompt 10 — 訓練紀錄頁面（training_page.py）
+
+**新增檔案：**
+- `training_page.py`：新增訓練紀錄（Part 1），進步曲線待開發（Part 2）
+
+**修改檔案：**
+- `app.py`：加入 `import training_page`，訓練紀錄頁接入 `training_page.render(user)`
+
+**功能流程：**
+1. 選會員 + 訓練日期
+2. 動作清單：用小表單（`clear_on_submit=True`）逐筆加入，每筆顯示動作 / 重量 / 組數 / 次數，可移除
+3. 填備註（選填）
+4. 送出 → `training_sessions`（表頭）+ `training_logs`（每個動作）包成一筆交易寫入
+5. 成功清空動作清單，顯示提示
+
+**設計重點：**
+- **購物車模式**：動作清單存在 `session_state["training_cart"]`，用小表單逐筆加入，不需一次填完再送出，符合實際在教練旁邊一組一組記的使用情境
+- **表單與送出按鈕分離**：「加入動作」用 `st.form`，「送出訓練紀錄」是表單外的按鈕，兩個操作互不干擾
+- **兩層原子交易**：`training_sessions` + `training_logs` 包成一筆 transaction，任一動作明細失敗就整批 rollback
 
 ---
 
