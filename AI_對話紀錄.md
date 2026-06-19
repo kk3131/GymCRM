@@ -207,6 +207,27 @@ PAGE_ACCESS = {
 
 ---
 
+### Prompt 9 — 到館簽到頁面（checkin_page.py）
+
+**新增檔案：**
+- `checkin_page.py`：搜尋會員 → 登記到館 → 今日到館清單
+
+**修改檔案：**
+- `app.py`：加入 `import checkin_page`，到館簽到頁接入 `checkin_page.render(user)`
+
+**功能流程：**
+1. 搜尋框輸入姓名關鍵字
+2. 結果列出，每人一個「登記到館」按鈕
+3. 按下 → `check_ins` 寫入一筆（member_id / 現在時間 / staff_id）
+4. 成功提示「XXX 到館登記完成」並 rerun
+5. 頁面下方顯示今日到館清單（時間 / 會員 / 登記人）
+
+**設計重點：**
+- **時區處理**：優先用 `zoneinfo.ZoneInfo("Asia/Taipei")` 取台北時間，避免伺服器在 UTC 環境記錯時間；若系統缺 tzdata 則 fallback 到本地時間
+- **sqlite3.Row 問題**：所有 `fetchall()` 結果一律 `[dict(r) for r in rows]`，沿用問題 2 的教訓
+
+---
+
 ## 遇到的問題與解法
 
 ### 問題 1 — ImportError: cannot import name 'can_see_financials'
