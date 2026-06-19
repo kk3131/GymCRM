@@ -300,6 +300,18 @@ Remove-Item -Path "D:\GymCRM\__pycache__" -Recurse -Force
 streamlit run app.py
 ```
 
+### 問題 3 — ModuleNotFoundError: No module named 'plotly'
+**狀況**：進入訓練紀錄頁面即報錯，即使 import 放在函式內部（lazy import）也無法避免  
+**錯誤訊息**：`ModuleNotFoundError: No module named 'plotly'`  
+**原因**：plotly 尚未安裝。另外，`import plotly` 雖放在 `render_progress()` 內，但 Streamlit 的 `st.tabs` 每次 render 會執行所有 tab 的內容，不是只跑當前 tab，所以只要進訓練紀錄頁，`render_progress()` 就一定被呼叫，plotly 必須安裝  
+**解法**：
+```
+pip install plotly
+```
+裝完重啟 `streamlit run app.py`
+
+---
+
 ### 問題 2 — selectbox 傳入 sqlite3.Row 導致 TypeError + Missing Submit Button
 **狀況**：進入新增會員頁面，同時出現兩個錯誤  
 **錯誤訊息**：
