@@ -227,7 +227,24 @@ PAGE_ACCESS = {
 - **時區處理**：優先用 `zoneinfo.ZoneInfo("Asia/Taipei")` 取台北時間，避免伺服器在 UTC 環境記錯時間；若系統缺 tzdata 則 fallback 到本地時間
 - **sqlite3.Row 問題**：所有 `fetchall()` 結果一律 `[dict(r) for r in rows]`，沿用問題 2 的教訓
 
-### Prompt 10 — 訓練紀錄頁面（training_page.py）
+### Prompt 10 — members_page 更新：最近訓練紀錄 + selectbox 序列化根本修正
+
+**修改檔案：**
+- `members_page.py`
+
+**新增功能：**
+- 會員詳細頁底部加入「最近訓練紀錄」區塊，顯示最近 5 次訓練，每次展開為動作明細（動作 / 重量 / 組數 / 次數）
+
+**新增函式：**
+- `fetch_recent_trainings(member_id, limit)`：用子查詢取最近 N 個 session_id，再 JOIN training_logs + exercises 一次撈完所有明細，Python 端按 session 分組渲染，避免 N+1 查詢
+
+**問題 2 根本修正（selectbox 序列化）：**
+舊版是在 `fetch_active_plans()` 回傳前轉 dict，但 dict 放進 selectbox 仍可能有序列化疑慮。
+新版改成 selectbox 選項只放純整數 `plan_id`，`format_func` 從 `plan_by_id` 字典查顯示文字，送出後再由 `plan_id` 取回完整方案 dict——selectbox 從頭到尾只存整數，徹底避開序列化問題。
+
+---
+
+### Prompt 11 — 訓練紀錄頁面（training_page.py）
 
 **新增檔案：**
 - `training_page.py`：新增訓練紀錄（Part 1），進步曲線待開發（Part 2）
