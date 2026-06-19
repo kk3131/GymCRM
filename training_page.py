@@ -4,7 +4,7 @@ training_page.py — 訓練紀錄
   Part 2: 進步曲線(待開發)
 撈出資料一律 dict(r)；時區用 Asia/Taipei；表頭與明細包成一筆交易。
 """
-from datetime import datetime
+from datetime import datetime, date
 
 import streamlit as st
 
@@ -72,10 +72,74 @@ def create_training(member_id, trainer_id, training_date, notes, items):
         conn.close()
 
 
+def has_checkin_on(member_id, date_str) -> bool:
+    """該會員在指定日期(YYYY-MM-DD)當天有沒有到館紀錄。"""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT 1 FROM check_ins WHERE member_id = ? AND date(check_in_at) = ? LIMIT 1",
+        (member_id, date_str),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def fetch_progress(member_id, exercise_id):
+    """每次訓練該動作的最大重量，按日期排序（給折線圖）。"""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT ts.training_date AS training_date, MAX(l.weight) AS max_weight
+        FROM training_sessions ts
+        JOIN training_logs l ON l.training_session_id = ts.training_session_id
+        WHERE ts.member_id = ? AND l.exercise_id = ?
+        GROUP BY ts.training_session_id
+        HAVING max_weight IS NOT NULL
+        ORDER BY ts.training_date
+        """,
+        (member_id, exercise_id),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def detect_stall(progress, recent_days: int = 7, prior_days: int = 28):
+    """週間比較式停滯偵測。
+    progress: [{training_date, max_weight}, ...]，已按日期由舊到新排序。
+    比較「最近一週的最高重量」與「之前三週(7~28天)的最高重量」：
+      最近 <= 之前 -> 停滯。
+    用『每週取最大』而非單筆，避免被熱身/測試組(如 20kg)誤導同一週的判斷。
+    回傳 (is_stall, recent_max, baseline_max)；資料不足回傳 (False, ...)。
+    """
+    if not progress:
+        return (False, None, None)
+
+    latest = date.fromisoformat(progress[-1]["training_date"])
+    recent_vals, prior_vals = [], []
+    for p in progress:
+        days_before = (latest - date.fromisoformat(p["training_date"])).days
+        if days_before <= recent_days - 1:        # 0~6 天 = 最近一週
+            recent_vals.append(p["max_weight"])
+        elif recent_days <= days_before <= prior_days:  # 7~28 天 = 之前三週
+            prior_vals.append(p["max_weight"])
+
+    if not recent_vals or not prior_vals:
+        return (False, None, None)  # 缺一邊就無法判斷，不輕易示警
+
+    recent_max = max(recent_vals)
+    baseline_max = max(prior_vals)
+    return (recent_max <= baseline_max, recent_max, baseline_max)
+
+
 # ==================== 畫面 ====================
 def render(user: dict):
-    st.subheader("新增訓練紀錄")
+    tab_new, tab_progress = st.tabs(["新增訓練紀錄", "進步曲線"])
+    with tab_new:
+        render_new(user)
+    with tab_progress:
+        render_progress(user)
 
+
+def render_new(user: dict):
     if "training_cart" not in st.session_state:
         st.session_state["training_cart"] = []
 
@@ -148,6 +212,11 @@ def render(user: dict):
 
     # 5. 送出
     st.divider()
+
+    # 軟性警告：該會員在訓練日期當天沒有到館紀錄（仍允許送出）
+    if not has_checkin_on(member_id, training_date.isoformat()):
+        st.warning("該會員當日無到館紀錄，請確認是否選錯會員。（仍可送出）")
+
     if st.button("送出訓練紀錄", type="primary"):
         if not cart:
             st.error("請至少加入一個動作。")
@@ -166,3 +235,63 @@ def render(user: dict):
         st.session_state["training_cart"] = []
         st.session_state["training_flash"] = f"訓練紀錄新增完成：{member_name}（{n} 個動作）"
         st.rerun()
+
+
+def render_progress(user: dict):
+    members = fetch_all_members()
+    if not members:
+        st.warning("尚無會員。")
+        return
+    member_by_id = {m["member_id"]: m for m in members}
+
+    exercises = fetch_exercises()
+    if not exercises:
+        st.warning("尚無動作資料。")
+        return
+    ex_by_id = {e["exercise_id"]: e for e in exercises}
+
+    c1, c2 = st.columns(2)
+    member_id = c1.selectbox(
+        "選擇會員", list(member_by_id.keys()),
+        format_func=lambda mid: member_by_id[mid]["name"],
+        key="progress_member",
+    )
+    exercise_id = c2.selectbox(
+        "選擇動作", list(ex_by_id.keys()),
+        format_func=lambda eid: ex_by_id[eid]["name"],
+        key="progress_exercise",
+    )
+
+    progress = fetch_progress(member_id, exercise_id)
+    if not progress:
+        st.info("這個會員在這個動作還沒有訓練紀錄。")
+        return
+
+    # 停滯偵測（週間比較）
+    is_stall, recent_max, baseline_max = detect_stall(progress)
+    if is_stall:
+        st.warning(
+            f"進步停滯，建議調整課表。"
+            f"（最近一週最高 {recent_max:g} kg ≤ 前三週最高 {baseline_max:g} kg）"
+        )
+
+    # 折線圖（plotly）
+    import plotly.graph_objects as go
+    dates = [p["training_date"] for p in progress]
+    weights = [p["max_weight"] for p in progress]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=dates, y=weights, mode="lines+markers",
+        line=dict(width=3, color="#2563eb"),
+        marker=dict(size=9),
+        hovertemplate="%{x}<br>%{y:g} kg<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_title="訓練日期",
+        yaxis_title="最大重量 (公斤)",
+        height=420,
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.caption(f"共 {len(progress)} 次紀錄，歷史最高 {max(weights):g} kg。")
