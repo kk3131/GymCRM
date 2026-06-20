@@ -26,9 +26,18 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     _auto_seed(conn)
 
 
+_seeding = False  # 防止 seed.seed() 內的 get_connection() 再次觸發 _auto_seed
+
 def _auto_seed(conn: sqlite3.Connection) -> None:
     """資料庫空白時自動植入種子資料（雲端部署用，避免每次重啟都要手動 seed）。"""
+    global _seeding
+    if _seeding:
+        return
     count = conn.execute("SELECT COUNT(*) FROM members").fetchone()[0]
     if count == 0:
-        import seed
-        seed.seed()
+        _seeding = True
+        try:
+            import seed
+            seed.seed()
+        finally:
+            _seeding = False
