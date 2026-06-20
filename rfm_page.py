@@ -84,7 +84,7 @@ def fetch_rfm():
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT m.member_id, m.name,
+        SELECT m.member_id, m.name, m.email,
           (SELECT MAX(c.check_in_at) FROM check_ins c
              WHERE c.member_id = m.member_id) AS last_checkin,
           (SELECT COUNT(*) FROM check_ins c

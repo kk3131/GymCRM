@@ -183,6 +183,89 @@ def seed():
     insert(cur, "INSERT INTO member_goals(member_id,goal_category,exercise_id,target_value,achieved,achieved_date) VALUES (?,?,?,?,?,?)",
            (m_mid, "weight", None, 60, 0, None))
 
+    # ========== 新增會員（加強資料多樣性）==========
+
+    # ---------- 會員 ----------
+    m_liu = insert(cur,
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("劉芳妤", "female", "1997-09-13", "0911222333", "liuf979@gmail.com", "lose_weight", d(400), 1, d(400)))
+    m_zhang = insert(cur,
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("張美玲", "female", "1993-04-07", "0933111222", "mei@example.com", "maintain", d(350), 1, d(350)))
+    m_lin = insert(cur,
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("林建宏", "male", "2000-11-18", "0955888777", "lin@example.com", "gain_muscle", d(180), 1, d(180)))
+    m_wu = insert(cur,
+        "INSERT INTO members(name,gender,birth_date,phone,email,goal_type,join_date,consent_data_collection,consent_date) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("吳志明", "male", "1985-06-22", "0922777555", "wu@example.com", "gain_muscle", d(500), 1, d(500)))
+
+    # ---------- 會籍 ----------
+    # 劉芳妤：月費(已到期) + 課程包(使用中，剩3堂)
+    ms_liu_monthly = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_liu, plan_monthly, "expired", d(200), d(170), None))
+    ms_liu_pack = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_liu, plan_pack, "active", d(100), None, 3))
+    # 張美玲：月費(使用中)
+    ms_zhang = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_zhang, plan_monthly, "active", d(20), d(-10), None))
+    # 林建宏：月費(使用中)
+    ms_lin = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_lin, plan_monthly, "active", d(20), d(-10), None))
+    # 吳志明：月費(使用中) + 課程包(使用中，剩2堂)
+    ms_wu_monthly = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_wu, plan_monthly, "active", d(20), d(-10), None))
+    ms_wu_pack = insert(cur,
+        "INSERT INTO memberships(member_id,plan_id,status,start_date,end_date,sessions_remaining) VALUES (?,?,?,?,?,?)",
+        (m_wu, plan_pack, "active", d(60), None, 2))
+
+    # ---------- 金流 ----------
+    # 劉芳妤：月費 2000 + 課程包 3000 = 5000（近一年）→ M=3
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_liu, ms_liu_monthly, front, 2000, "membership_fee", d(200), "cash"))
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_liu, ms_liu_pack, front, 3000, "add_on_class", d(100), "card"))
+    # 張美玲：月費 × 2 = 4000（近一年）→ M=2
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_zhang, ms_zhang, front, 2000, "membership_fee", d(20), "card"))
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_zhang, None, front, 2000, "membership_fee", d(80), "card"))
+    # 林建宏：月費 2000 → M=2
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_lin, ms_lin, front, 2000, "membership_fee", d(20), "card"))
+    # 吳志明：月費 × 6 + 課程包 = 15000（近一年）→ M=4
+    for days in [20, 80, 140, 200, 260, 320]:
+        insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+               (m_wu, ms_wu_monthly if days == 20 else None, front, 2000, "membership_fee", d(days), "card"))
+    insert(cur, "INSERT INTO payments(member_id,membership_id,staff_id,amount,payment_type,payment_date,method) VALUES (?,?,?,?,?,?,?)",
+           (m_wu, ms_wu_pack, front, 3000, "add_on_class", d(60), "card"))
+
+    # ---------- 到館簽到 ----------
+    # 劉芳妤：15 次，最近 45 天前 → R=2, F=3（流失風險 + 出現在 alert 清單一）
+    liu_offsets = [45, 58, 72, 88, 104, 120, 138, 158, 178, 200, 225, 252, 280, 315, 355]
+    # 張美玲：18 次，最近 6 天前 → R=5, F=3（穩定會員）
+    zhang_offsets = [6, 15, 25, 38, 52, 68, 85, 103, 122, 143, 165, 188, 213, 240, 270, 305, 340, 362]
+    # 林建宏：6 次，最近 10 天前 → R=4, F=2（一般會員）
+    lin_offsets = [10, 28, 52, 90, 150, 230]
+    # 吳志明：26 次，最近 3 天前 → R=5, F=4（核心會員）
+    wu_offsets = [3, 10, 17, 24, 32, 40, 48, 57, 67, 78, 90, 103, 116, 130, 145,
+                  160, 175, 192, 210, 229, 249, 270, 293, 317, 343, 360]
+    for mid_, offsets in [(m_liu, liu_offsets), (m_zhang, zhang_offsets),
+                          (m_lin, lin_offsets), (m_wu, wu_offsets)]:
+        for off in offsets:
+            insert(cur, "INSERT INTO check_ins(member_id,check_in_at,checked_in_by) VALUES (?,?,?)",
+                   (mid_, dt(off, hour=(8 + off % 12)), front))
+
+    # ---------- 訓練紀錄（吳志明：深蹲持續進步，展示核心會員特性）----------
+    add_session(m_wu, 300, [(ex_squat, 80, 5, 5), (ex_bench, 60, 5, 8)])
+    add_session(m_wu, 200, [(ex_squat, 90, 5, 5), (ex_bench, 65, 5, 6)])
+    add_session(m_wu,  80, [(ex_squat, 100, 5, 5), (ex_dead, 120, 3, 5)])
+    add_session(m_wu,  10, [(ex_squat, 110, 5, 5), (ex_dead, 130, 3, 5)])
+
     conn.commit()
     conn.close()
     print("種子資料建立完成。")
