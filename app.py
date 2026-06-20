@@ -8,6 +8,7 @@ app.py — 健身房 CRM 主程式
 import streamlit as st
 
 from auth import verify_login, pages_for_role, can_access, ROLE_LABELS
+import dashboard_page
 import members_page
 import checkin_page
 import training_page
@@ -66,7 +67,9 @@ def main_view():
 def render_page(page: str, user: dict):
     st.title(page)
 
-    if page == "會員管理":
+    if page == "管理者儀表板":
+        dashboard_page.render(user)
+    elif page == "會員管理":
         members_page.render(user)
     elif page == "訓練紀錄":
         training_page.render(user)
