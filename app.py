@@ -12,6 +12,7 @@ import members_page
 import checkin_page
 import training_page
 import rfm_page
+import alert_page
 
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
@@ -74,7 +75,7 @@ def render_page(page: str, user: dict):
     elif page == "RFM 分析":
         rfm_page.render(user)
     elif page == "流失預警":
-        st.info("流失預警（僅管理者）—— 開發中。")
+        alert_page.render(user)
 
 
 # ---------------- 進入點 ----------------
