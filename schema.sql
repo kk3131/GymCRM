@@ -141,6 +141,17 @@ CREATE TABLE IF NOT EXISTS training_logs (
     created_at          TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ---------- 12. 聯繫紀錄（流失預警的跟進紀錄）----------
+CREATE TABLE IF NOT EXISTS contact_logs (
+    log_id       INTEGER PRIMARY KEY,
+    member_id    INTEGER NOT NULL REFERENCES members(member_id),
+    staff_id     INTEGER NOT NULL REFERENCES staff(staff_id),
+    contact_date TEXT    NOT NULL,
+    alert_type   TEXT    NOT NULL CHECK (alert_type IN ('no_checkin', 'plateau')),  -- 未到館/進步停滯
+    note         TEXT,
+    created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================
 -- 索引：加速 RFM / 流失預警 / 進步停滯 的查詢
 -- （SQLite 會自動為 PRIMARY KEY 建索引，但不會自動為外鍵建）
@@ -153,3 +164,4 @@ CREATE INDEX IF NOT EXISTS idx_goals_member          ON member_goals(member_id);
 CREATE INDEX IF NOT EXISTS idx_tsessions_member_date ON training_sessions(member_id, training_date);
 CREATE INDEX IF NOT EXISTS idx_tlogs_session         ON training_logs(training_session_id);
 CREATE INDEX IF NOT EXISTS idx_tlogs_exercise        ON training_logs(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_contactlogs_member    ON contact_logs(member_id, alert_type, contact_date);

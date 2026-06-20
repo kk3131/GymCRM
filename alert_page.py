@@ -1,26 +1,43 @@
 """
 alert_page.py — 流失預警（管理者限定）
   清單一：高貢獻會員超過兩週未到館
-          RFM 分群為核心/穩定，且最近一次到館 > 14 天
+          （F 分數>=3 或 M 分數>=3）且 最近一次到館 > 14 天   ← 與最近性脫鉤
   清單二：進步停滯超過三週
           某動作「最近一週最大重量」未高於「前三週最大重量」
-每列附備註欄，讓前台記錄聯繫狀況（目前暫存於 session，未落地資料庫）。
-分群邏輯重用 rfm_page；停滯邏輯重用 training_page，維持單一來源。
+每列：備註輸入框 + 「記錄聯繫」按鈕（寫入 contact_logs），並顯示最近一次聯繫紀錄。
+分群/評分重用 rfm_page；停滯重用 training_page。資料一律 dict(r)；時區用 Asia/Taipei。
 """
+from datetime import datetime
+
 import streamlit as st
 
 from db import get_connection
 from rfm_page import compute_rfm_rows
 from training_page import fetch_progress, detect_stall
 
+# 時區：台北
+try:
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Asia/Taipei")
+except Exception:
+    _TZ = None
+
+
+def _today_str():
+    now = datetime.now(_TZ) if _TZ else datetime.now()
+    return now.strftime("%Y-%m-%d")
+
+
 RECENCY_THRESHOLD = 14
 
 
+# ==================== 資料 ====================
 def get_lapsing_high_value(threshold: int = RECENCY_THRESHOLD):
-    """核心/穩定會員，但最近到館超過 threshold 天。"""
+    """高貢獻(F 或 M 分數>=3) 且 最近到館 > threshold 天。與分群脫鉤。"""
     result = []
     for r in compute_rfm_rows():
-        if (r["segment"] in ("核心會員", "穩定會員")
+        is_high_value = r["f_score"] >= 3 or r["m_score"] >= 3
+        if (is_high_value
                 and r["recency_days"] is not None
                 and r["recency_days"] > threshold):
             result.append({
@@ -30,7 +47,7 @@ def get_lapsing_high_value(threshold: int = RECENCY_THRESHOLD):
                 "recency_days": r["recency_days"],
                 "segment": r["segment"],
             })
-    result.sort(key=lambda x: x["recency_days"], reverse=True)  # 越久越前面
+    result.sort(key=lambda x: x["recency_days"], reverse=True)
     return result
 
 
@@ -53,7 +70,7 @@ def get_stalled():
     result = []
     for p in pairs:
         progress = fetch_progress(p["member_id"], p["exercise_id"])
-        is_stall, _recent, _baseline = detect_stall(progress)
+        is_stall, _r, _b = detect_stall(progress)
         if is_stall:
             result.append({
                 "member_id": p["member_id"],
@@ -66,30 +83,73 @@ def get_stalled():
     return result
 
 
+def create_contact_log(member_id, staff_id, alert_type, note):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO contact_logs(member_id, staff_id, contact_date, alert_type, note) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (member_id, staff_id, _today_str(), alert_type, note),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fetch_latest_contact(member_id, alert_type):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT contact_date, note FROM contact_logs "
+        "WHERE member_id = ? AND alert_type = ? "
+        "ORDER BY contact_date DESC, log_id DESC LIMIT 1",
+        (member_id, alert_type),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+# ==================== 畫面 ====================
+def _last_contact_caption(member_id, alert_type):
+    last = fetch_latest_contact(member_id, alert_type)
+    if last:
+        note = last["note"] or "（無備註）"
+        return f"上次聯繫 {last['contact_date']}：{note}"
+    return "尚無聯繫紀錄"
+
+
 def render(user: dict):
     st.subheader("流失預警")
 
+    flash = st.session_state.pop("alert_flash", None)
+    if flash:
+        st.success(flash)
+
     # ========== 清單一 ==========
     st.markdown("#### 1. 高貢獻會員超過兩週未到館")
-    st.caption("RFM 分群為核心／穩定，且最近一次到館已超過 14 天")
+    st.caption("近一年到館≥12 次 或 消費≥5000 元（高貢獻），且最近一次到館已超過 14 天")
     list1 = get_lapsing_high_value()
     if not list1:
         st.success("目前沒有符合條件的高貢獻會員。")
     else:
-        h = st.columns([2, 2, 1.3, 1.5, 3])
-        for col, t in zip(h, ["會員", "最近到館", "距今(天)", "分群", "備註（聯繫狀況）"]):
+        h = st.columns([1.6, 1.4, 1, 1.4, 2.2, 1.1])
+        for col, t in zip(h, ["會員", "最近到館", "距今(天)", "分群", "備註", ""]):
             col.markdown(f"**{t}**")
         for m in list1:
-            c1, c2, c3, c4, c5 = st.columns([2, 2, 1.3, 1.5, 3])
+            c1, c2, c3, c4, c5, c6 = st.columns([1.6, 1.4, 1, 1.4, 2.2, 1.1])
             c1.write(m["name"])
+            c1.caption(_last_contact_caption(m["member_id"], "no_checkin"))
             c2.write(m["last_checkin"])
             c3.write(str(m["recency_days"]))
             c4.write(m["segment"])
-            c5.text_input(
-                "備註", key=f"alert1_note_{m['member_id']}",
-                label_visibility="collapsed",
-                placeholder="例如：已電話聯繫、約下週回來",
-            )
+            note_key = f"n1_{m['member_id']}"
+            note = c5.text_input("備註", key=note_key, label_visibility="collapsed",
+                                 placeholder="例如：已電話聯繫")
+            if c6.button("記錄聯繫", key=f"b1_{m['member_id']}"):
+                create_contact_log(m["member_id"], user["staff_id"], "no_checkin",
+                                   (note or "").strip() or None)
+                st.session_state.pop(note_key, None)
+                st.session_state["alert_flash"] = f"{m['name']} 聯繫紀錄已儲存"
+                st.rerun()
 
     st.divider()
 
@@ -100,18 +160,21 @@ def render(user: dict):
     if not list2:
         st.success("目前沒有進步停滯的會員。")
     else:
-        h = st.columns([2, 2, 2, 3])
-        for col, t in zip(h, ["會員", "停滯動作", "最後訓練日", "備註（聯繫狀況）"]):
+        h = st.columns([1.6, 1.6, 1.6, 2.2, 1.1])
+        for col, t in zip(h, ["會員", "停滯動作", "最後訓練日", "備註", ""]):
             col.markdown(f"**{t}**")
         for s in list2:
-            c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
+            c1, c2, c3, c4, c5 = st.columns([1.6, 1.6, 1.6, 2.2, 1.1])
             c1.write(s["member_name"])
+            c1.caption(_last_contact_caption(s["member_id"], "plateau"))
             c2.write(s["exercise_name"])
             c3.write(s["last_training_date"])
-            c4.text_input(
-                "備註", key=f"alert2_note_{s['member_id']}_{s['exercise_id']}",
-                label_visibility="collapsed",
-                placeholder="例如：已通知教練調整課表",
-            )
-
-    st.caption("備註目前僅暫存於本次操作（重新整理會清空）。需要永久保存可再加一張聯繫紀錄表。")
+            note_key = f"n2_{s['member_id']}_{s['exercise_id']}"
+            note = c4.text_input("備註", key=note_key, label_visibility="collapsed",
+                                 placeholder="例如：已通知教練調整課表")
+            if c5.button("記錄聯繫", key=f"b2_{s['member_id']}_{s['exercise_id']}"):
+                create_contact_log(s["member_id"], user["staff_id"], "plateau",
+                                   (note or "").strip() or None)
+                st.session_state.pop(note_key, None)
+                st.session_state["alert_flash"] = f"{s['member_name']} 聯繫紀錄已儲存"
+                st.rerun()

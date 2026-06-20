@@ -43,6 +43,7 @@ def insert(cur, sql, params):
 def clear_all(cur):
     """依外鍵相依順序，子表先刪、父表後刪。"""
     for t in [
+        "contact_logs",
         "training_logs", "training_sessions", "member_goals",
         "body_measurements", "check_ins", "payments", "memberships",
         "members", "exercises", "membership_plans", "staff",
