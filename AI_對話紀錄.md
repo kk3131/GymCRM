@@ -339,6 +339,65 @@ pip install plotly
 ```
 裝完重啟 `streamlit run app.py`
 
+### Prompt 14 — 流失預警頁面初版（alert_page.py）
+
+**新增檔案：**
+- `alert_page.py`：流失預警（管理者限定）
+
+**修改檔案：**
+- `app.py`：加入 `import alert_page`，取代原佔位 `st.info`，串接 `alert_page.render(user)`
+
+**功能：**
+- **清單一：高貢獻會員超過兩週未到館**
+  - 條件：RFM 分群為核心會員或穩定會員，且最近一次到館 > 14 天
+  - 欄位：會員 / 最近到館日期 / 距今天數 / 分群 / 備註輸入框
+  - 備註僅存 `session_state`，重整後清空
+- **清單二：進步停滯超過三週**
+  - 掃描所有（會員, 動作）組合，對有重量紀錄的一一呼叫 `detect_stall()`
+  - 欄位：會員 / 停滯動作 / 最後訓練日 / 備註輸入框
+
+**設計重點：**
+- 分群邏輯重用 `rfm_page.compute_rfm_rows()`；停滯偵測重用 `training_page.fetch_progress` / `detect_stall`，不重複實作
+- 清單一按 `recency_days` 降序排列，最危急的排最上面
+
+---
+
+### Prompt 15 — alert_page 升級：contact_logs 落地 + 高貢獻判斷改用 F/M 分數
+
+**修改檔案：**
+- `alert_page.py`：高貢獻條件、備註落地、上次聯繫顯示
+- `schema.sql`：新增第 12 張表 `contact_logs`，加複合索引
+- `seed.py`：`clear_all` 補上 `contact_logs`（子表優先刪）
+
+**高貢獻判斷調整：**
+舊版以分群（核心/穩定）為條件，但分群受 R 分數影響——高貢獻會員一旦最近不來，R 分數下降可能跌出「核心/穩定」，反而從預警清單消失，正是最需要被提醒的人卻被漏掉。  
+→ 新版改為：`f_score >= 3 or m_score >= 3`（到館頻率或消費達標），與最近性（R）脫鉤，只要歷史貢獻高就列入。
+
+**contact_logs 表（第 12 張）：**
+
+| 欄位 | 說明 |
+|------|------|
+| log_id | PK |
+| member_id | FK → members |
+| staff_id | FK → staff，紀錄誰聯繫的 |
+| contact_date | 聯繫日期 TEXT 'YYYY-MM-DD' |
+| alert_type | `no_checkin` / `plateau` |
+| note | 聯繫備註 |
+
+**新增函式：**
+- `create_contact_log(member_id, staff_id, alert_type, note)`：寫入 `contact_logs`
+- `fetch_latest_contact(member_id, alert_type)`：查最近一筆聯繫紀錄
+
+**畫面變動：**
+- 每列「備註輸入框」旁加「記錄聯繫」按鈕，按下後寫入 DB、清空輸入框、rerun
+- 每個會員名稱下方顯示上次聯繫日期與備註（`st.caption`）
+- 儲存成功用 `st.session_state["alert_flash"]` 傳 flash 訊息，rerun 後頂部顯示
+
+**設計重點：**
+- flash 訊息用 `session_state.pop("alert_flash", None)` 取出，只顯示一次，不殘留
+- `_today_str()` 集中管理台北時區日期，所有聯繫紀錄日期格式一致
+- `seed.py` 的 `clear_all` 把 `contact_logs` 加在子表最前面（它 FK 指向 members 和 staff，必須先於這兩表刪除）
+
 ---
 
 ### 問題 2 — selectbox 傳入 sqlite3.Row 導致 TypeError + Missing Submit Button
