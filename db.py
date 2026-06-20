@@ -23,3 +23,12 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     """讀 schema.sql 並執行；CREATE TABLE IF NOT EXISTS 保證安全重複執行。"""
     sql = SQL_PATH.read_text(encoding="utf-8")
     conn.executescript(sql)
+    _auto_seed(conn)
+
+
+def _auto_seed(conn: sqlite3.Connection) -> None:
+    """資料庫空白時自動植入種子資料（雲端部署用，避免每次重啟都要手動 seed）。"""
+    count = conn.execute("SELECT COUNT(*) FROM members").fetchone()[0]
+    if count == 0:
+        import seed
+        seed.seed()
