@@ -400,6 +400,62 @@ pip install plotly
 
 ---
 
+### Prompt 16 — 擴充種子資料：新增 4 位會員，劉芳妤設為流失風險
+
+**修改檔案：**
+- `seed.py`：在原有 3 位會員基礎上追加 4 位，刻意設計不同 RFM 分群
+
+**新增會員與 RFM 設計：**
+
+| 會員 | Email | R | F | M | 分群 | 設計意圖 |
+|------|-------|---|---|---|------|---------|
+| 劉芳妤 | liuf979@gmail.com | 2 | 3 | 3 | 流失風險 | 驗證發信功能的主角；45 天未到館但歷史貢獻高 |
+| 張美玲 | mei@example.com | 5 | 3 | 2 | 穩定會員 | 近期活躍的一般女性會員 |
+| 林建宏 | lin@example.com | 4 | 2 | 2 | 一般會員 | 新加入，到館頻率尚低 |
+| 吳志明 | wu@example.com | 5 | 4 | 4 | 核心會員 | 高頻、高消費，同時有深蹲進步曲線資料 |
+
+**劉芳妤的資料設計：**
+- 最近一次到館：45 天前（R=2 → 流失風險）
+- 近一年到館 15 次（F=3 → 高貢獻）
+- 近一年消費 5000（月費 2000 + 課程包 3000，M=3 → 高貢獻）
+- alert_page 清單一條件：`f_score >= 3 or m_score >= 3` 且 `recency_days > 14` → 出現 ✓
+
+**設計重點：**
+- 所有 email 欄位都有值，確保發信按鈕可以測試
+- 吳志明補了 4 次訓練 session（深蹲 80→90→100→110kg），確保進步曲線頁有多樣資料
+
+---
+
+### Prompt 17 — Gmail SMTP 發郵件功能（mailer.py）
+
+**新增檔案：**
+- `mailer.py`：Gmail SMTP 發信模組
+- `.env.example`：憑證設定範本（已 push，無真實密碼）
+- `.env`：真實憑證（在 `.gitignore`，不會上傳）
+
+**修改檔案：**
+- `rfm_page.py`：`fetch_rfm()` 的 SELECT 補 `m.email`，讓 `compute_rfm_rows()` 回傳 email 欄位
+- `alert_page.py`：`get_lapsing_high_value()` / `get_stalled()` 帶出 email，新增發信按鈕與邏輯
+- `requirements.txt`：加入 `python-dotenv`
+
+**mailer.py 設計：**
+- `is_configured()`：檢查環境變數是否設定，UI 據此決定是否顯示發信按鈕
+- `send_alert_email(to, name, alert_type, note)`：用 `smtplib.SMTP_SSL` + port 465 連 Gmail
+- `_build_content()`：依 `alert_type` 產生不同主旨與正文（繁體中文）
+- 憑證從 `os.environ` 讀取；若安裝了 `python-dotenv` 則自動載入 `.env`
+
+**alert_page UI 變動：**
+- 未設定憑證時頂部顯示警告，發信按鈕整頁停用
+- 每列新增「發信」按鈕（僅 email 非空且憑證已設定才顯示）
+- 發信成功後：自動呼叫 `create_contact_log()` 寫入「已發送提醒郵件至 xxx」，與手動記錄共用同一條 contact_logs
+- 無 Email 欄位的會員顯示「無 Email」提示
+
+**設計重點：**
+- 發信 + 記錄聯繫合併為一步，按一個「發信」就同時寄出並留下紀錄，不需兩步操作
+- `_send_and_log()` 捕捉例外並回傳 `(ok: bool, msg: str)`，UI 層根據結果顯示 success 或 error
+
+---
+
 ### 問題 2 — selectbox 傳入 sqlite3.Row 導致 TypeError + Missing Submit Button
 **狀況**：進入新增會員頁面，同時出現兩個錯誤  
 **錯誤訊息**：
@@ -412,3 +468,45 @@ Missing Submit Button（Streamlit 警告）
 ```python
 return [dict(r) for r in rows]
 ```
+
+### 問題 4 — Google 應用程式密碼（App Password）入口找不到
+**狀況**：在 Google 帳戶安全性頁面找不到「應用程式密碼」選項，頁面只顯示兩步驟驗證、密碼、Google 提示等項目  
+**原因**：Google 將 App Password 入口從安全性主頁面移除，改為需要主動搜尋或直接用網址才能找到；即使兩步驟驗證已啟用，入口也不會自動出現在清單裡  
+**解法**：直接在瀏覽器輸入網址前往，或在 Google 帳戶搜尋欄搜尋「應用程式密碼」：
+```
+myaccount.google.com/apppasswords
+```
+進入後建立新密碼（自訂名稱如 GymCRM），取得 16 碼後貼入 `.env` 的 `GMAIL_APP_PASSWORD=` 欄位
+
+---
+
+## 下一步可以做什麼（v1 未完成 + v2 方向）
+
+### v1 原承諾但尚未實作
+
+#### 1. 管理者儀表板（dashboard_page.py）★ 最優先
+Prompt 2 決策中明確列為 v1 範圍，目前唯一缺口。
+- **出席率趨勢**：每週/每月到館人次折線圖
+- **收入走勢**：每月 payments 加總長條圖
+- **RFM 分布**：各分群人數圓餅或長條
+- **本月關鍵數字**：新會員數、到館人次、收入、流失風險人數
+
+#### 2. 里程碑達成慶祝（members_page.py 詳細頁）
+Prompt 2 決策：「達到目標體重或目標重量時系統顯示恭喜訊息」
+- 在會員詳細頁，比對最新 `body_measurements.weight` 與 `member_goals` 目標值
+- 若 `achieved=0` 且已達標，顯示恭喜卡片並可按鈕標記達成（寫入 `achieved=1`, `achieved_date`）
+
+### v1.5 可加強的功能
+
+#### 3. 批量發信
+- 流失預警頁加「全選」checkbox + 「一鍵發送提醒給選中會員」按鈕
+- 適合定期（例如每週一）一次處理所有預警
+
+#### 4. 聯繫紀錄查詢
+- 新分頁或 members_page 詳細頁底部，顯示該會員所有歷史聯繫紀錄
+- 讓管理者追蹤「這位會員之前聯繫了幾次、說了什麼」
+
+### v2 方向（Prompt 2 已定為 v2）
+- **課程預約**：classes / class_sessions / bookings 三張表，支援候補與取消
+- **LINE 推播**：改用 LINE Messaging API 取代 Email（台灣用戶接觸率更高）
+- **銷售漏斗**：潛在客戶 → 體驗課 → 正式會員的轉換追蹤
