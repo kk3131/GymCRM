@@ -540,3 +540,79 @@ RFM 分群分布（環狀圖）：
 - KPI 使用台北時區日期，與簽到頁時區一致（`zoneinfo.ZoneInfo("Asia/Taipei")`）
 - plotly 在 `render()` 內 lazy import，只有進儀表板才載入
 - KPI 在種子資料下顯示 0 屬正常（種子資料無「今日」紀錄），實際使用後自動反映
+
+---
+
+## 階段四：部署上線
+
+### Prompt 19 — 部署環境選擇與 Streamlit Cloud 上線
+
+**需求背景：**
+老師要求線上繳交，無法現場展示，需要一個「永遠在線、可以直接給老師網址」的部署方案。
+
+**部署環境比較與決策：**
+
+| 平台 | 費用 | SQLite 資料 | 是否睡眠 | 決策 |
+|------|------|------------|---------|------|
+| Replit 免費版 | 免費 | 持久 | 長時間閒置會睡眠 | ❌ 老師非同步查看會看到 app 停止 |
+| Replit 付費版 | $25/月 | 持久 | 不會 | ❌ 學生不值得付費 |
+| Streamlit Community Cloud | 免費 | 重部署後清空 | **不會** | ✅ 最終選擇 |
+| Railway / Render | 免費額度有限 | 可設持久 | 閒置後睡眠 | ❌ 設定較複雜 |
+
+**選擇 Streamlit Cloud 的理由：**
+- 永遠在線，老師隨時可以打開網址
+- GitHub 串接，`git push` 後自動重新部署（1~2 分鐘生效）
+- 免費，直接用 GitHub 帳號登入
+- 唯一缺點是重部署後 SQLite 資料清空，用自動 seed 解決
+
+**解決 SQLite 資料消失問題：**
+修改 `db.py`，在 `_init_schema()` 後加入 `_auto_seed()`：
+- 每次連線時檢查 `members` 表是否為空
+- 若空（重部署後的第一次連線）自動呼叫 `seed.seed()` 植入示範資料
+- 管理者第一次登入就能看到完整資料，不需手動初始化
+
+**Streamlit Cloud 部署步驟：**
+1. 前往 share.streamlit.io，用 GitHub 帳號登入
+2. New app → 選 `kk3131/GymCRM`，main file: `app.py`
+3. Advanced settings → Secrets 填入 Gmail 憑證（TOML 格式）
+4. Deploy
+
+**部署後行為：**
+- GitHub repo 可改回 private（Streamlit Cloud 已取得授權，不受影響）
+- 之後每次 `git push` 到 main branch，Streamlit Cloud 自動偵測並重新部署
+
+---
+
+### 問題 5 — Replit 免費版 app 會睡眠，無法給老師非同步查看
+**狀況**：部署到 Replit 免費版後，長時間無人使用 app 會進入睡眠狀態，老師打開網址看到「app is not running」  
+**原因**：Replit 免費版對閒置的 Repl 會自動暫停，需要手動重新啟動或升級付費方案  
+**解法**：改用 Streamlit Community Cloud，永遠在線且免費，適合非同步展示給老師的使用情境
+
+---
+
+### 問題 6 — Replit import private repo 失敗（Something went wrong）
+**狀況**：在 Replit 匯入 GitHub repo 時，選取 `kk3131/GymCRM` 後顯示 "Something went wrong, try again later"  
+**原因**：Replit 沒有取得讀取 private repo 的授權  
+**解法**：在 Replit 重新連結 GitHub 帳號並授權存取 private repo；或暫時將 repo 改為 public → 匯入成功後再改回 private
+
+---
+
+### 問題 7 — _auto_seed 導致 RecursionError: maximum recursion depth exceeded
+**狀況**：Streamlit Cloud 部署後，登入頁按登入即報錯 `RecursionError: maximum recursion depth exceeded`  
+**錯誤訊息**：`RecursionError: maximum recursion depth exceeded`（發生在 `pathlib.read_text`）  
+**原因**：`db.py` 的 `_auto_seed()` 呼叫 `seed.seed()`，而 `seed.seed()` 內部又呼叫 `get_connection()`，`get_connection()` 再次觸發 `_auto_seed()`，形成無限遞迴  
+**解法**：在 `db.py` 加入模組層級旗標 `_seeding = False`，進入 seed 前設為 `True`，讓後續的 `get_connection()` 呼叫跳過 `_auto_seed`：
+```python
+_seeding = False
+
+def _auto_seed(conn):
+    global _seeding
+    if _seeding:
+        return
+    if conn.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
+        _seeding = True
+        try:
+            import seed; seed.seed()
+        finally:
+            _seeding = False
+```
