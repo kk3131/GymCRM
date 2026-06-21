@@ -182,6 +182,9 @@ def seed():
            (m_mid, "weight", None, 65, 1, d(25)))
     insert(cur, "INSERT INTO member_goals(member_id,goal_category,exercise_id,target_value,achieved,achieved_date) VALUES (?,?,?,?,?,?)",
            (m_mid, "weight", None, 60, 0, None))
+    # 即將達標(測試慶祝卡片)：王大明臥推目標 55kg；他的歷史最佳剛好 55，會立即判定達標、待標記
+    insert(cur, "INSERT INTO member_goals(member_id,goal_category,exercise_id,target_value,achieved,achieved_date) VALUES (?,?,?,?,?,?)",
+           (m_high, "lift", ex_bench, 55, 0, None))
 
     # ========== 新增會員（加強資料多樣性）==========
 

@@ -8,12 +8,13 @@ app.py — 健身房 CRM 主程式
 import streamlit as st
 
 from auth import verify_login, pages_for_role, can_access, ROLE_LABELS
-import dashboard_page
 import members_page
 import checkin_page
 import training_page
+import goals_page
 import rfm_page
 import alert_page
+import dashboard_page
 
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
@@ -75,6 +76,8 @@ def render_page(page: str, user: dict):
         training_page.render(user)
     elif page == "到館簽到":
         checkin_page.render(user)
+    elif page == "目標達成":
+        goals_page.render(user)
     elif page == "RFM 分析":
         rfm_page.render(user)
     elif page == "流失預警":
