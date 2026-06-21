@@ -20,9 +20,8 @@ import pixel_home
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
 # ── 全域像素風格 CSS ──
-_PIXEL_CSS = """
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<style>
+_PIXEL_CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 /* 主背景 */
 .stApp { background-color: #1a1a2e !important; }
 .main .block-container { background-color: #1a1a2e !important; padding-top: 24px !important; }
