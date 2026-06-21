@@ -41,3 +41,26 @@ def _auto_seed(conn: sqlite3.Connection) -> None:
             seed.seed()
         finally:
             _seeding = False
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """補植入 seed 更新後可能遺漏的資料（冪等：已存在就跳過）。"""
+    # 王大明臥推目標 55kg（goals_page 測試用）
+    ex = conn.execute(
+        "SELECT exercise_id FROM exercises WHERE name = '臥推' LIMIT 1"
+    ).fetchone()
+    m = conn.execute(
+        "SELECT member_id FROM members WHERE name = '王大明' LIMIT 1"
+    ).fetchone()
+    if ex and m:
+        already = conn.execute(
+            "SELECT 1 FROM member_goals WHERE member_id=? AND goal_category='lift' AND exercise_id=? AND target_value=55",
+            (m["member_id"], ex["exercise_id"]),
+        ).fetchone()
+        if not already:
+            conn.execute(
+                "INSERT INTO member_goals(member_id,goal_category,exercise_id,target_value,achieved) VALUES (?,?,?,55,0)",
+                (m["member_id"], ex["exercise_id"]),
+            )
+            conn.commit()
