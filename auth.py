@@ -8,13 +8,14 @@ from db import get_connection
 # 頁面 -> 允許看到的角色
 # manager 看全部；front_desk 看不到財務(RFM/流失預警)；trainer 只看訓練相關
 PAGE_ACCESS = {
-    "管理者儀表板": {"manager"},
-    "會員管理":   {"manager", "front_desk"},
-    "訓練紀錄":   {"manager", "front_desk", "trainer"},
-    "到館簽到":   {"manager", "front_desk"},
-    "目標達成":   {"manager", "front_desk", "trainer"},
-    "RFM 分析":   {"manager"},
-    "流失預警":   {"manager"},
+    "🎮 ADVENTURE MAP": {"manager", "front_desk", "trainer"},
+    "🗺️ DASHBOARD":     {"manager"},
+    "🏠 PLAYER SELECT": {"manager", "front_desk"},
+    "💪 TRAINING LOG":  {"manager", "front_desk", "trainer"},
+    "📋 CHECK IN":      {"manager", "front_desk"},
+    "🏆 GOALS":         {"manager", "front_desk", "trainer"},
+    "📊 STATS":         {"manager"},
+    "⚠️ DANGER ZONE":   {"manager"},
 }
 
 # 角色代碼 -> 中文顯示
