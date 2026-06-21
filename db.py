@@ -61,6 +61,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if not already:
             conn.execute(
                 "INSERT INTO member_goals(member_id,goal_category,exercise_id,target_value,achieved) VALUES (?,?,?,55,0)",
-                (m["member_id"], ex["exercise_id"]),
+                (m["member_id"], "lift", ex["exercise_id"]),
             )
             conn.commit()
