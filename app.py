@@ -16,6 +16,7 @@ import rfm_page
 import alert_page
 import dashboard_page
 import pixel_home
+import consultant_page
 
 st.set_page_config(page_title="健身房 CRM", page_icon="💪", layout="wide")
 
@@ -194,6 +195,8 @@ def render_page(page: str, user: dict):
         rfm_page.render(user)
     elif page == "⚠️ DANGER ZONE":
         alert_page.render(user)
+    elif page == "🤖 AI 顧問":
+        consultant_page.render(user)
 
 
 # ---------------- 進入點 ----------------

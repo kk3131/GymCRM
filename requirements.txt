@@ -2,3 +2,4 @@ streamlit
 bcrypt
 plotly
 python-dotenv
+google-genai

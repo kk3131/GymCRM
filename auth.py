@@ -16,6 +16,7 @@ PAGE_ACCESS = {
     "🏆 GOALS":         {"manager", "front_desk", "trainer"},
     "📊 STATS":         {"manager"},
     "⚠️ DANGER ZONE":   {"manager"},
+    "🤖 AI 顧問":       {"manager"},
 }
 
 # 角色代碼 -> 中文顯示
