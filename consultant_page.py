@@ -236,15 +236,17 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
             return response.text
         except Exception as e:
             msg = str(e)
-            transient = any(k in msg for k in ("503", "UNAVAILABLE", "overloaded", "429", "RESOURCE_EXHAUSTED"))
-            if transient and attempt < 2:
-                time.sleep(2 * (attempt + 1))
-                continue
-            # 轉成友善訊息再拋出
-            if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
-                raise RuntimeError("Gemini 暫時忙線（高流量），請稍後再試。") from e
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                raise RuntimeError("已達 Gemini 每分鐘/每日額度上限，請稍後再試。") from e
+                # 額度問題重試無用，直接拋出
+                raise RuntimeError(
+                    "已達 Gemini 每分鐘額度上限（免費方案約 15 次/分鐘）。\n"
+                    "等 1 分鐘後再試；若每天都發生，請到 Google AI Studio 開啟計費。"
+                ) from e
+            if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise RuntimeError("Gemini 暫時忙線（高流量），請稍後再試。") from e
             if any(k in msg for k in ("401", "403", "API_KEY", "invalid")):
                 raise RuntimeError(f"金鑰或權限問題，請確認 GEMINI_API_KEY 正確。({msg})") from e
             raise
