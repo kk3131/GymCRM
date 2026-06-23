@@ -4,9 +4,13 @@ consultant_page.py — 🤖 AI 留客顧問
 資料去識別化（不送姓名、電話）；對話歷史存 session_state，切換會員自動清空。
 """
 import os
+import time
 from datetime import date, timedelta
 
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from db import get_connection
 from rfm_page import score_r, score_f, score_m, segment
@@ -219,15 +223,31 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
         parts=[types.Part(text=user_msg)],
     ))
 
-    response = client.models.generate_content(
-        model=_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=0.7,
-        ),
-    )
-    return response.text
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.7,
+                ),
+            )
+            return response.text
+        except Exception as e:
+            msg = str(e)
+            transient = any(k in msg for k in ("503", "UNAVAILABLE", "overloaded", "429", "RESOURCE_EXHAUSTED"))
+            if transient and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            # 轉成友善訊息再拋出
+            if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
+                raise RuntimeError("Gemini 暫時忙線（高流量），請稍後再試。") from e
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                raise RuntimeError("已達 Gemini 每分鐘/每日額度上限，請稍後再試。") from e
+            if any(k in msg for k in ("401", "403", "API_KEY", "invalid")):
+                raise RuntimeError(f"金鑰或權限問題，請確認 GEMINI_API_KEY 正確。({msg})") from e
+            raise
 
 
 # ── 頁面入口 ─────────────────────────────────────────────────
@@ -287,10 +307,8 @@ def render(user: dict):
         try:
             reply = _call_gemini(api_key, system_prompt, history, user_msg)
             st.markdown(reply)
+            history.append({"role": "user", "content": user_msg})
+            history.append({"role": "model", "content": reply})
+            st.session_state["_consult_history"] = history
         except Exception as e:
             st.error(f"AI 回應失敗：{e}")
-            return
-
-    history.append({"role": "user", "content": user_msg})
-    history.append({"role": "model", "content": reply})
-    st.session_state["_consult_history"] = history
