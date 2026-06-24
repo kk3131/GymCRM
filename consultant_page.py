@@ -3,12 +3,16 @@ consultant_page.py — 🤖 AI 留客顧問
 管理者選一位會員 → 自動組出去識別化資料摘要 → 用 Gemini 多輪對話分析留客策略
 資料去識別化（不送姓名、電話）；對話歷史存 session_state，切換會員自動清空。
 """
+import logging
 import os
 import time
 from datetime import date, timedelta
 
 import streamlit as st
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO)
+_log = logging.getLogger("consultant_page")
 
 load_dotenv()
 
@@ -238,8 +242,9 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
             return response.text
         except Exception as e:
             msg = str(e)
+            _log.error("[Gemini attempt=%d] %s: %s", attempt, type(e).__name__, msg)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                raise RuntimeError("__RATE_LIMIT__") from e
+                raise RuntimeError(f"__RATE_LIMIT__{msg}") from e
             if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))
@@ -251,7 +256,7 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
 
 
 def _is_rate_limit_error(e: Exception) -> bool:
-    return "__RATE_LIMIT__" in str(e)
+    return str(e).startswith("__RATE_LIMIT__")
 
 
 # ── 頁面入口 ─────────────────────────────────────────────────
@@ -311,12 +316,16 @@ def render(user: dict):
         if now < rate_limit_until:
             # 倒數中
             wait_secs = int(rate_limit_until - now)
+            raw_err = st.session_state.get("_rate_limit_raw", "")
             with st.chat_message("assistant"):
                 st.info(
                     f"⏳ 已達 Gemini 每分鐘額度上限（免費方案 15 次/分鐘）。\n\n"
                     f"**{wait_secs} 秒後自動重試**，請稍候..."
                 )
                 st.progress(max(0.0, 1.0 - wait_secs / _RATE_LIMIT_WAIT))
+                if raw_err:
+                    with st.expander("原始錯誤（除錯用）"):
+                        st.code(raw_err)
             time.sleep(1)
             st.rerun()
         else:
@@ -364,12 +373,17 @@ def render(user: dict):
                 st.session_state["_consult_history"] = history
             except Exception as e:
                 if _is_rate_limit_error(e):
+                    raw = str(e).removeprefix("__RATE_LIMIT__")
+                    _log.error("[429 on user msg] raw=%s", raw)
                     st.session_state["_rate_limit_until"] = time.time() + _RATE_LIMIT_WAIT
                     st.session_state["_pending_msg"] = user_msg
+                    st.session_state["_rate_limit_raw"] = raw
                     st.info(
                         f"⏳ 已達 Gemini 每分鐘額度上限（免費方案 15 次/分鐘）。\n\n"
                         f"**{_RATE_LIMIT_WAIT} 秒後自動重試**，請稍候..."
                     )
+                    with st.expander("原始錯誤（除錯用）"):
+                        st.code(raw)
                     time.sleep(1)
                     st.rerun()
                 else:
