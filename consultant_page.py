@@ -25,7 +25,7 @@ _SYSTEM_INSTRUCTION = (
     "會員資料回答，給出具體可執行的建議，"
     "不要編造資料裡沒有的數字。回答用繁體中文。"
 )
-_MODEL = "gemini-1.5-flash"
+_MODEL = "gemini-2.5-flash"
 _RATE_LIMIT_WAIT = 62  # 免費方案 15 req/min，等 62 秒確保跨越邊界
 
 
@@ -229,7 +229,7 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
         parts=[types.Part(text=user_msg)],
     ))
 
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             response = client.models.generate_content(
                 model=_MODEL,
@@ -246,8 +246,10 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                 raise RuntimeError(f"__RATE_LIMIT__{msg}") from e
             if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
+                if attempt < 4:
+                    wait = 5 * (2 ** attempt)   # 5s, 10s, 20s, 40s
+                    _log.warning("[Gemini 503] attempt=%d, sleep %ds", attempt, wait)
+                    time.sleep(wait)
                     continue
                 raise RuntimeError("Gemini 暫時忙線（高流量），請稍後再試。") from e
             if any(k in msg for k in ("401", "403", "API_KEY", "invalid")):
