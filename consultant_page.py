@@ -25,7 +25,7 @@ _SYSTEM_INSTRUCTION = (
     "會員資料回答，給出具體可執行的建議，"
     "不要編造資料裡沒有的數字。回答用繁體中文。"
 )
-_MODEL = "gemini-2.0-flash"
+_MODEL = "gemini-2.5-flash"
 _RATE_LIMIT_WAIT = 62  # 免費方案 15 req/min，等 62 秒確保跨越邊界
 
 
