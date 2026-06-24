@@ -597,6 +597,56 @@ RFM 分群分布（環狀圖）：
 
 ---
 
+### Prompt 20 — AI 留客顧問（consultant_page.py）
+
+**新增檔案：**
+- `consultant_page.py`：AI 留客顧問（manager 限定）
+
+**修改檔案：**
+- `app.py`：側邊欄加入「🤖 AI 顧問」，接入 `consultant_page.render(user)`
+
+**功能：**
+- 管理者選擇一位會員 → 自動組出去識別化摘要（RFM 分群、8週到館趨勢、會籍狀態、訓練停滯、目標進度）
+- 摘要注入 Gemini system prompt，不占對話 token
+- 多輪對話：管理者可連續追問，歷史對話存 `session_state`，切換會員自動清空
+- 資料去識別化：不傳送姓名、電話
+
+**使用模型：** `gemini-2.5-flash`（google-genai SDK 2.x）
+
+**穩定性設計：**
+- 503 忙線：指數退避自動重試 5 次（5s / 10s / 20s / 40s），通常第 1～2 次重試成功
+- 429 額度限制：62 秒倒數進度條，時間到自動重送原本訊息（`_pending_msg` 存 session_state）
+- `@st.cache_data(ttl=300)`：`_all_members` / `_fetch_profile` 快取 5 分鐘，減少每次 rerun 的 DB 查詢
+
+**Streamlit Cloud Secrets 新增：**
+- `GEMINI_API_KEY`
+
+---
+
+### 問題 8 — Gemini API 在 Streamlit Cloud 持續 429／404／503
+
+**狀況：** AI 顧問在本機（其他專案）正常，但部署到 Streamlit Cloud 後各種錯誤輪流出現
+
+**錯誤一：429 RESOURCE_EXHAUSTED（limit: 0）**
+- **原因：** Streamlit Cloud 為資料中心 IP，Google 對雲端伺服器 IP 將免費方案配額設為 0，非速率限制問題
+- **解法：** 為 Gemini API 金鑰啟用計費功能
+
+**錯誤二：404 NOT_FOUND — models/gemini-2.0-flash is no longer available**
+- **原因：** `gemini-2.0-flash` 已被 Google 下架
+- **解法：** 換用 `gemini-2.5-flash`
+
+**錯誤三：404 NOT_FOUND — models/gemini-1.5-flash is not found for API version v1beta**
+- **原因：** `gemini-1.5-flash` 在新版 SDK 的 v1beta endpoint 不支援
+- **解法：** 回到 `gemini-2.5-flash`，加強 503 重試邏輯
+
+**錯誤四：503 UNAVAILABLE（高流量）**
+- **原因：** `gemini-2.5-flash` 偶發忙線
+- **解法：** 指數退避重試（最多 5 次），通常 1～2 次內成功
+
+**最終穩定組合：** `gemini-2.5-flash` + 5 次指數退避重試 ✅
+
+---
+
 ### 問題 7 — _auto_seed 導致 RecursionError: maximum recursion depth exceeded
 **狀況**：Streamlit Cloud 部署後，登入頁按登入即報錯 `RecursionError: maximum recursion depth exceeded`  
 **錯誤訊息**：`RecursionError: maximum recursion depth exceeded`（發生在 `pathlib.read_text`）  
