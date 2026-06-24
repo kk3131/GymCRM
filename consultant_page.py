@@ -22,10 +22,12 @@ _SYSTEM_INSTRUCTION = (
     "不要編造資料裡沒有的數字。回答用繁體中文。"
 )
 _MODEL = "gemini-2.0-flash"
+_RATE_LIMIT_WAIT = 62  # 免費方案 15 req/min，等 62 秒確保跨越邊界
 
 
 # ── 資料查詢 ─────────────────────────────────────────────────
 
+@st.cache_data(ttl=300)
 def _all_members():
     conn = get_connection()
     rows = conn.execute("SELECT member_id, name FROM members ORDER BY name").fetchall()
@@ -33,6 +35,7 @@ def _all_members():
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=300)
 def _fetch_profile(member_id: int) -> dict:
     conn = get_connection()
     today = date.today()
@@ -81,7 +84,7 @@ def _fetch_profile(member_id: int) -> dict:
     ms_end = ms_row["end_date"] if ms_row else None
     lives = (date.fromisoformat(ms_end) - today).days if ms_end else None
 
-    # 訓練停滯：查出此會員有訓練紀錄的動作，用現有 detect_stall 函式判斷
+    # 訓練停滯
     trained_exs = conn.execute(
         "SELECT DISTINCT l.exercise_id, e.name FROM training_logs l "
         "JOIN training_sessions ts ON ts.training_session_id=l.training_session_id "
@@ -211,7 +214,6 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
 
     client = genai.Client(api_key=api_key)
 
-    # 重建多輪對話 contents
     contents = []
     for turn in history:
         contents.append(types.Content(
@@ -237,11 +239,7 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
         except Exception as e:
             msg = str(e)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                # 額度問題重試無用，直接拋出
-                raise RuntimeError(
-                    "已達 Gemini 每分鐘額度上限（免費方案約 15 次/分鐘）。\n"
-                    "等 1 分鐘後再試；若每天都發生，請到 Google AI Studio 開啟計費。"
-                ) from e
+                raise RuntimeError("__RATE_LIMIT__") from e
             if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg:
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))
@@ -250,6 +248,10 @@ def _call_gemini(api_key: str, system_prompt: str, history: list, user_msg: str)
             if any(k in msg for k in ("401", "403", "API_KEY", "invalid")):
                 raise RuntimeError(f"金鑰或權限問題，請確認 GEMINI_API_KEY 正確。({msg})") from e
             raise
+
+
+def _is_rate_limit_error(e: Exception) -> bool:
+    return "__RATE_LIMIT__" in str(e)
 
 
 # ── 頁面入口 ─────────────────────────────────────────────────
@@ -268,12 +270,13 @@ def render(user: dict):
         key="consultant_member",
     )
 
-    # 切換會員 → 清空對話歷史
+    # 切換會員 → 清空對話歷史與 pending 狀態
     if st.session_state.get("_consult_mid") != mid:
         st.session_state["_consult_history"] = []
         st.session_state["_consult_mid"] = mid
+        st.session_state.pop("_pending_msg", None)
+        st.session_state.pop("_rate_limit_until", None)
 
-    # 組出摘要，profile_text 注入 system prompt（不占用對話 token）
     profile = _fetch_profile(mid)
     profile_text = _build_profile_text(profile)
     system_prompt = f"{_SYSTEM_INSTRUCTION}\n\n{profile_text}"
@@ -290,12 +293,58 @@ def render(user: dict):
 
     history: list = st.session_state["_consult_history"]
 
-    # 顯示歷史對話（role "model" 在 Streamlit 顯示為 "assistant"）
+    # 顯示歷史對話
     for turn in history:
         role_ui = "assistant" if turn["role"] == "model" else "user"
         with st.chat_message(role_ui):
             st.markdown(turn["content"])
 
+    # ── 429 自動重試倒數 ──────────────────────────────────────
+    pending_msg = st.session_state.get("_pending_msg", "")
+    rate_limit_until = st.session_state.get("_rate_limit_until", 0)
+    now = time.time()
+
+    if pending_msg:
+        with st.chat_message("user"):
+            st.markdown(pending_msg)
+
+        if now < rate_limit_until:
+            # 倒數中
+            wait_secs = int(rate_limit_until - now)
+            with st.chat_message("assistant"):
+                st.info(
+                    f"⏳ 已達 Gemini 每分鐘額度上限（免費方案 15 次/分鐘）。\n\n"
+                    f"**{wait_secs} 秒後自動重試**，請稍候..."
+                )
+                st.progress(max(0.0, 1.0 - wait_secs / _RATE_LIMIT_WAIT))
+            time.sleep(1)
+            st.rerun()
+        else:
+            # 時間到，自動重試
+            with st.chat_message("assistant"):
+                with st.spinner("重試中..."):
+                    try:
+                        reply = _call_gemini(api_key, system_prompt, history, pending_msg)
+                        st.markdown(reply)
+                        history.append({"role": "user", "content": pending_msg})
+                        history.append({"role": "model", "content": reply})
+                        st.session_state["_consult_history"] = history
+                        st.session_state.pop("_pending_msg", None)
+                        st.session_state.pop("_rate_limit_until", None)
+                    except Exception as e:
+                        if _is_rate_limit_error(e):
+                            # 重試仍失敗，再等一輪
+                            st.session_state["_rate_limit_until"] = time.time() + _RATE_LIMIT_WAIT
+                            st.info(f"⏳ 仍在額度限制中，再等 {_RATE_LIMIT_WAIT} 秒...")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"AI 回應失敗：{e}")
+                            st.session_state.pop("_pending_msg", None)
+                            st.session_state.pop("_rate_limit_until", None)
+        return  # pending 狀態下不顯示 chat_input
+
+    # ── 正常流程 ──────────────────────────────────────────────
     user_msg = st.chat_input(
         "詢問 AI 顧問，例如：這位會員有什麼流失風險？有哪些具體建議？"
     )
@@ -306,11 +355,22 @@ def render(user: dict):
         st.markdown(user_msg)
 
     with st.chat_message("assistant"):
-        try:
-            reply = _call_gemini(api_key, system_prompt, history, user_msg)
-            st.markdown(reply)
-            history.append({"role": "user", "content": user_msg})
-            history.append({"role": "model", "content": reply})
-            st.session_state["_consult_history"] = history
-        except Exception as e:
-            st.error(f"AI 回應失敗：{e}")
+        with st.spinner("AI 顧問思考中..."):
+            try:
+                reply = _call_gemini(api_key, system_prompt, history, user_msg)
+                st.markdown(reply)
+                history.append({"role": "user", "content": user_msg})
+                history.append({"role": "model", "content": reply})
+                st.session_state["_consult_history"] = history
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    st.session_state["_rate_limit_until"] = time.time() + _RATE_LIMIT_WAIT
+                    st.session_state["_pending_msg"] = user_msg
+                    st.info(
+                        f"⏳ 已達 Gemini 每分鐘額度上限（免費方案 15 次/分鐘）。\n\n"
+                        f"**{_RATE_LIMIT_WAIT} 秒後自動重試**，請稍候..."
+                    )
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"AI 回應失敗：{e}")
